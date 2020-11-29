@@ -37,14 +37,19 @@ def set_resume_id():
         json.dump({ 'run_id': run_id }, f)
 
 def log_progress(epoch):
+    with torch.no_grad():
+        fake = gen(fixed_noise).detach().cpu()
+    img = create_grid(fake)
+
     wandb.log({ 'epoch': epoch,
                 'd_loss': d_loss.item(),
                 'g_loss': g_loss.item(),
                 'D(G(x))': d_fake_mean,
-                'D(x)': d_real_mean })
+                'D(x)': d_real_mean,
+                'img': wandb.Image(img) })
 
 def create_grid(batch):
-    grid = vutils.make_grid(batch[0], padding=2, normalize=True).numpy()
+    grid = vutils.make_grid(batch, padding=2, normalize=True).numpy()
     return np.transpose(grid, (1,2,0))
 
 def compose_state_dict(epoch):
@@ -134,8 +139,8 @@ for epoch in range(start_epoch, N_EPOCHS + 1):
 
         # Forward real batch trough discriminator
         d_out = dis(batch).view(-1)
-        d_loss_r = criterion(d_out, target)
         d_real_mean = d_out.mean().item()
+        d_loss_r = criterion(d_out, target)
         d_loss_r.backward()
         
         # Generate fake batch trough generator
@@ -145,8 +150,9 @@ for epoch in range(start_epoch, N_EPOCHS + 1):
 
         # Forward fake batch trough discriminator
         d_out = dis(g_out.detach()).view(-1)
-        d_loss_f = criterion(d_out, target)
         d_fake_mean = d_out.mean().item()
+        d_loss_f = criterion(d_out, target)
+        d_loss_f.backward()
 
         # Optimze discriminator
         d_loss = d_loss_f + d_loss_r
